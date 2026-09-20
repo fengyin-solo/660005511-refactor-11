@@ -1,8 +1,14 @@
 import asyncio, time, random, math, json, threading
 import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import create_model
+
+from .grid_params import (
+    FIELD_NAMES, FIELD_SPECS,
+    validate_grid_config, grid_spacing, grid_prices,
+)
 
 app = FastAPI(title="Grid Trading Engine")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -12,12 +18,13 @@ SIM_RUNNING = True
 current_price = 100.0
 ticks_history = []
 
-class GridConfig(BaseModel):
-    lowerPrice: float = 95
-    upperPrice: float = 115
-    gridCount: int = 20
-    capitalPerGrid: float = 1000
-    initialCapital: float = 100000
+# 参数模型的默认值与字段类型同样来自共享定义，范围校验统一走 validate_grid_config
+_PY_TYPES = {"number": float, "integer": int}
+GridConfig = create_model(
+    "GridConfig",
+    **{name: (_PY_TYPES[FIELD_SPECS[name]["type"]], FIELD_SPECS[name]["default"])
+       for name in FIELD_NAMES}
+)
 
 
 def simulate_market():
@@ -58,8 +65,18 @@ async def startup():
 
 @app.post("/api/backtest")
 def run_backtest(config: GridConfig):
-    step = (config.upperPrice - config.lowerPrice) / config.gridCount
-    grid_prices = [config.lowerPrice + i * step for i in range(config.gridCount + 1)]
+    # 参数口径与配置面板完全一致：统一由共享定义校验、统一派生网格间距
+    params = config.model_dump()
+    errors = validate_grid_config(params)
+    if errors:
+        raise RequestValidationError([
+            {"type": e["code"], "loc": ["body", e["field"]], "msg": e["message"],
+             "input": params.get(e["field"])}
+            for e in errors
+        ])
+
+    step = grid_spacing(params)
+    grid_prices_list = grid_prices(params)
 
     # Simulate prices
     np.random.seed(42)
@@ -70,17 +87,17 @@ def run_backtest(config: GridConfig):
 
     buy_grids = {}  # price -> True (buy order placed)
     orders = []
-    cash = config.initialCapital
+    cash = params["initialCapital"]
     holdings = 0
     equity_curve = [cash]
     order_id = 0
 
     for p in prices:
-        for gp in grid_prices:
+        for gp in grid_prices_list:
             # Buy signal
-            if p <= gp and gp not in buy_grids and cash >= config.capitalPerGrid:
-                qty = config.capitalPerGrid / gp
-                cash -= config.capitalPerGrid
+            if p <= gp and gp not in buy_grids and cash >= params["capitalPerGrid"]:
+                qty = params["capitalPerGrid"] / gp
+                cash -= params["capitalPerGrid"]
                 holdings += qty
                 buy_grids[gp] = True
                 order_id += 1
@@ -89,11 +106,11 @@ def run_backtest(config: GridConfig):
             # Sell signal
             upper_gp = gp + step * 0.5
             if p >= upper_gp and gp in buy_grids:
-                qty = config.capitalPerGrid / gp
+                qty = params["capitalPerGrid"] / gp
                 buy_price = gp
                 sell_price = gp + step * 0.5
                 profit = qty * (sell_price - buy_price)
-                cash += config.capitalPerGrid + profit
+                cash += params["capitalPerGrid"] + profit
                 holdings -= qty
                 del buy_grids[gp]
                 order_id += 1
@@ -102,11 +119,11 @@ def run_backtest(config: GridConfig):
         equity = cash + holdings * p
         equity_curve.append(round(equity, 2))
 
-    total_profit = cash + holdings * prices[-1] - config.initialCapital
-    return_rate = (total_profit / config.initialCapital) * 100
+    total_profit = cash + holdings * prices[-1] - params["initialCapital"]
+    return_rate = (total_profit / params["initialCapital"]) * 100
 
     # Sharpe ratio
-    eq_returns = np.diff(equity_curve) / np.array(equity_curve[:-1] + 1e-5)
+    eq_returns = np.diff(equity_curve) / (np.array(equity_curve[:-1]) + 1e-5)
     sharpe = float(np.mean(eq_returns) / max(np.std(eq_returns), 1e-5) * np.sqrt(252)) if len(eq_returns) > 1 else 0
 
     # Max drawdown

@@ -1,0 +1,84 @@
+{
+  "fields": [
+    {
+      "name": "lowerPrice",
+      "label": "下限价格",
+      "type": "number",
+      "default": 95,
+      "min": 50,
+      "max": 200,
+      "step": 5,
+      "messages": {
+        "notANumber": "{label}必须是数字",
+        "notAnInteger": "{label}必须是整数",
+        "outOfRange": "{label}必须在 {min} ~ {max} 之间"
+      }
+    },
+    {
+      "name": "upperPrice",
+      "label": "上限价格",
+      "type": "number",
+      "default": 115,
+      "min": 50,
+      "max": 200,
+      "step": 5,
+      "messages": {
+        "notANumber": "{label}必须是数字",
+        "notAnInteger": "{label}必须是整数",
+        "outOfRange": "{label}必须在 {min} ~ {max} 之间"
+      }
+    },
+    {
+      "name": "gridCount",
+      "label": "网格数量",
+      "type": "integer",
+      "default": 20,
+      "min": 5,
+      "max": 50,
+      "step": 5,
+      "messages": {
+        "notANumber": "{label}必须是数字",
+        "notAnInteger": "{label}必须是整数",
+        "outOfRange": "{label}必须在 {min} ~ {max} 之间"
+      }
+    },
+    {
+      "name": "capitalPerGrid",
+      "label": "每格资金",
+      "type": "number",
+      "default": 1000,
+      "min": 100,
+      "max": 50000,
+      "step": 500,
+      "messages": {
+        "notANumber": "{label}必须是数字",
+        "notAnInteger": "{label}必须是整数",
+        "outOfRange": "{label}必须在 {min} ~ {max} 之间"
+      }
+    },
+    {
+      "name": "initialCapital",
+      "label": "初始资金",
+      "type": "number",
+      "default": 100000,
+      "min": 10000,
+      "max": 1000000,
+      "step": 10000,
+      "messages": {
+        "notANumber": "{label}必须是数字",
+        "notAnInteger": "{label}必须是整数",
+        "outOfRange": "{label}必须在 {min} ~ {max} 之间"
+      }
+    }
+  ],
+  "rules": [
+    {
+      "id": "priceOrder",
+      "type": "lessThan",
+      "left": "lowerPrice",
+      "right": "upperPrice",
+      "fields": ["lowerPrice", "upperPrice"],
+      "message": "下限价格必须小于上限价格，请检查两项是否填反"
+    }
+  ]
+}
