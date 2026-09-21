@@ -1,8 +1,9 @@
 import asyncio, time, random, math, json, threading
 import numpy as np
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from .grid_params import defaults, validate_config, grid_spacing
 
 app = FastAPI(title="Grid Trading Engine")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -12,12 +13,20 @@ SIM_RUNNING = True
 current_price = 100.0
 ticks_history = []
 
+_DEFAULTS = defaults()
+
+
+def _config_dict(config):
+    # pydantic v2 使用 model_dump，v1 使用 dict
+    return config.model_dump() if hasattr(config, "model_dump") else config.dict()
+
+
 class GridConfig(BaseModel):
-    lowerPrice: float = 95
-    upperPrice: float = 115
-    gridCount: int = 20
-    capitalPerGrid: float = 1000
-    initialCapital: float = 100000
+    lowerPrice: float = Field(default=_DEFAULTS["lowerPrice"])
+    upperPrice: float = Field(default=_DEFAULTS["upperPrice"])
+    gridCount: int = Field(default=_DEFAULTS["gridCount"])
+    capitalPerGrid: float = Field(default=_DEFAULTS["capitalPerGrid"])
+    initialCapital: float = Field(default=_DEFAULTS["initialCapital"])
 
 
 def simulate_market():
@@ -58,7 +67,14 @@ async def startup():
 
 @app.post("/api/backtest")
 def run_backtest(config: GridConfig):
-    step = (config.upperPrice - config.lowerPrice) / config.gridCount
+    cfg = _config_dict(config)
+    # 与配置面板同一份定义：逐字段提示不合格项（含上下限填反）
+    errors = validate_config(cfg)
+    if errors:
+        raise HTTPException(status_code=422, detail=errors)
+
+    # 网格间距由共用定义派生，前端展示与这里的下单口径始终一致
+    step = grid_spacing(cfg)
     grid_prices = [config.lowerPrice + i * step for i in range(config.gridCount + 1)]
 
     # Simulate prices
@@ -106,7 +122,7 @@ def run_backtest(config: GridConfig):
     return_rate = (total_profit / config.initialCapital) * 100
 
     # Sharpe ratio
-    eq_returns = np.diff(equity_curve) / np.array(equity_curve[:-1] + 1e-5)
+    eq_returns = np.diff(equity_curve) / (np.array(equity_curve[:-1]) + 1e-5)
     sharpe = float(np.mean(eq_returns) / max(np.std(eq_returns), 1e-5) * np.sqrt(252)) if len(eq_returns) > 1 else 0
 
     # Max drawdown
@@ -139,5 +155,5 @@ async def ws_endpoint(ws: WebSocket):
     ACTIVE_CLIENTS.append(ws)
     try:
         while True: await ws.receive_text()
-    except: 
+    except:
         if ws in ACTIVE_CLIENTS: ACTIVE_CLIENTS.remove(ws)

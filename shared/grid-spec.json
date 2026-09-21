@@ -1,0 +1,25 @@
+{
+  "fields": {
+    "lowerPrice":      { "label": "下限价格", "type": "number", "min": 50, "max": 200, "step": 5, "default": 95 },
+    "upperPrice":      { "label": "上限价格", "type": "number", "min": 50, "max": 200, "step": 5, "default": 115 },
+    "gridCount":       { "label": "网格数量", "type": "integer", "min": 5, "max": 50, "step": 5, "default": 20 },
+    "capitalPerGrid":  { "label": "每格资金", "type": "number", "min": 100, "max": 50000, "step": 500, "default": 1000 },
+    "initialCapital":  { "label": "初始资金", "type": "number", "min": 10000, "max": 1000000, "step": 10000, "default": 100000 }
+  },
+  "rows": [
+    { "cols": ["lowerPrice", "upperPrice"] },
+    { "cols": ["gridCount", "capitalPerGrid"] },
+    { "cols": ["initialCapital"] }
+  ],
+  "rules": [
+    {
+      "expr": ["<", "lowerPrice", "upperPrice"],
+      "fields": ["lowerPrice", "upperPrice"],
+      "message": "{lowerPrice}必须小于{upperPrice}"
+    }
+  ],
+  "derived": {
+    "gridSpacing":      { "expr": ["/", ["-", "upperPrice", "lowerPrice"], "gridCount"] },
+    "totalGridCapital": { "expr": ["*", "gridCount", "capitalPerGrid"] }
+  }
+}
